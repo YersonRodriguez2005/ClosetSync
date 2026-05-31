@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ClosetSync</string>
+    <string name="title_activity_main">ClosetSync</string>
+    <string name="package_name">co.nexodigital.closetsync</string>
+    <string name="custom_url_scheme">co.nexodigital.closetsync</string>
+</resources>

@@ -1,0 +1,7 @@
+{
+  "name": "ClosetSync",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react-vite"
+}
