@@ -8,7 +8,6 @@ import {
   IonBackButton,
   useIonViewWillEnter,
 } from "@ionic/react";
-import { Capacitor } from "@capacitor/core";
 import { getGarments, deleteGarment } from "../database/dbService";
 import { Trash2, Plus, SearchX, Shirt } from "lucide-react";
 import { useIonRouter } from "@ionic/react";
@@ -42,33 +41,30 @@ const STYLES = `
     to   { opacity: 0; transform: scale(0.85); }
   }
 
-  .animate-fade-up  { animation: fadeUp  0.4s cubic-bezier(0.22,1,0.36,1) both; }
-  .animate-fade-in  { animation: fadeIn  0.35s ease both; }
+  .animate-fade-up    { animation: fadeUp   0.4s cubic-bezier(0.22,1,0.36,1) both; }
+  .animate-fade-in    { animation: fadeIn   0.35s ease both; }
   .animate-slide-down { animation: slideDown 0.3s cubic-bezier(0.22,1,0.36,1) both; }
 
-  .item-stagger:nth-child(1)  { animation-delay: 0.04s; }
-  .item-stagger:nth-child(2)  { animation-delay: 0.08s; }
-  .item-stagger:nth-child(3)  { animation-delay: 0.12s; }
-  .item-stagger:nth-child(4)  { animation-delay: 0.16s; }
-  .item-stagger:nth-child(5)  { animation-delay: 0.20s; }
-  .item-stagger:nth-child(6)  { animation-delay: 0.24s; }
-  .item-stagger:nth-child(7)  { animation-delay: 0.28s; }
-  .item-stagger:nth-child(8)  { animation-delay: 0.32s; }
-  .item-stagger:nth-child(n+9){ animation-delay: 0.36s; }
+  .item-stagger:nth-child(1)   { animation-delay: 0.04s; }
+  .item-stagger:nth-child(2)   { animation-delay: 0.08s; }
+  .item-stagger:nth-child(3)   { animation-delay: 0.12s; }
+  .item-stagger:nth-child(4)   { animation-delay: 0.16s; }
+  .item-stagger:nth-child(5)   { animation-delay: 0.20s; }
+  .item-stagger:nth-child(6)   { animation-delay: 0.24s; }
+  .item-stagger:nth-child(7)   { animation-delay: 0.28s; }
+  .item-stagger:nth-child(8)   { animation-delay: 0.32s; }
+  .item-stagger:nth-child(n+9) { animation-delay: 0.36s; }
 
   .filter-pill {
     transition: transform 0.2s cubic-bezier(0.22,1,0.36,1),
-                background-color 0.2s ease,
-                color 0.2s ease,
-                box-shadow 0.2s ease;
+                background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
     -webkit-tap-highlight-color: transparent;
     will-change: transform;
   }
   .filter-pill:active { transform: scale(0.94); }
 
   .card-item {
-    transition: transform 0.2s cubic-bezier(0.22,1,0.36,1),
-                box-shadow 0.2s ease;
+    transition: transform 0.2s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s ease;
     -webkit-tap-highlight-color: transparent;
     will-change: transform;
   }
@@ -80,25 +76,18 @@ const STYLES = `
   }
   .delete-btn:active { transform: scale(0.85); }
 
-  /* Show delete btn on mobile (always visible, subtle) */
   .garment-img { transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); }
   .card-item:active .garment-img { transform: scale(1.04); }
 
   .fab {
-    transition: transform 0.2s cubic-bezier(0.22,1,0.36,1),
-                box-shadow 0.2s ease;
+    transition: transform 0.2s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s ease;
     will-change: transform;
   }
   .fab:active { transform: scale(0.93); }
 
-  .removing {
-    animation: scaleOut 0.28s cubic-bezier(0.22,1,0.36,1) forwards;
-  }
+  .removing { animation: scaleOut 0.28s cubic-bezier(0.22,1,0.36,1) forwards; }
 
-  ion-content {
-    --background: #0f0c29;
-  }
-
+  ion-content { --background: #0f0c29; }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 `;
@@ -106,12 +95,19 @@ const STYLES = `
 // ─── Category data ────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  { id: null, label: "Todos", emoji: "✨" },
-  { id: 1,    label: "Superior", emoji: "👕" },
-  { id: 2,    label: "Inferior",  emoji: "👖" },
-  { id: 3,    label: "Calzado",   emoji: "👟" },
-  { id: 4,    label: "Accesorios",emoji: "🎒" },
+  { id: null, label: "Todos",      emoji: "✨" },
+  { id: 1,    label: "Superior",   emoji: "👕" },
+  { id: 2,    label: "Inferior",   emoji: "👖" },
+  { id: 3,    label: "Calzado",    emoji: "👟" },
+  { id: 4,    label: "Accesorios", emoji: "🎒" },
 ];
+
+// ─── Image src helper ─────────────────────────────────────────────────────────
+// image_uri is always a base64 data URL (saved by Studio.tsx).
+// Capacitor.convertFileSrc() is only for native file:// paths — calling it on
+// a base64 string corrupts it and forces a synchronous decode on the main
+// thread, which causes ANR on Android. Return the value as-is.
+const resolveImageSrc = (uri: string): string => uri;
 
 // ─── Garment Card ─────────────────────────────────────────────────────────────
 
@@ -129,7 +125,7 @@ const GarmentCard: React.FC<{
       overflow: "hidden",
     }}
   >
-    {/* Image area */}
+    {/* Image area — checkered pattern shows through transparent PNG */}
     <div
       className="relative flex items-center justify-center overflow-hidden"
       style={{
@@ -146,13 +142,17 @@ const GarmentCard: React.FC<{
       }}
     >
       <img
-        src={Capacitor.convertFileSrc(item.image_uri)}
+        src={resolveImageSrc(item.image_uri)}
         alt={item.category_name}
         className="garment-img object-contain w-full h-full p-3"
         style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.25))" }}
+        // Lazy-load images further down the list to avoid decoding all
+        // base64 strings at once (prevents main-thread jank / ANR)
+        loading="lazy"
+        decoding="async"
       />
 
-      {/* Delete button — always visible, top-right */}
+      {/* Delete button */}
       <button
         onClick={(e) => onDelete(e, item)}
         className="delete-btn absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center"
@@ -205,9 +205,7 @@ const EmptyState: React.FC<{ onAdd: () => void }> = ({ onAdd }) => (
     >
       <SearchX size={36} style={{ color: "rgba(165,180,252,0.6)" }} />
     </div>
-    <p className="text-base font-semibold text-white mb-1">
-      Tu armario está vacío
-    </p>
+    <p className="text-base font-semibold text-white mb-1">Tu armario está vacío</p>
     <p className="text-sm mb-6" style={{ color: "rgba(255,255,255,0.4)" }}>
       Ve al estudio para escanear tu primera prenda
     </p>
@@ -230,10 +228,10 @@ const EmptyState: React.FC<{ onAdd: () => void }> = ({ onAdd }) => (
 
 export const Closet: React.FC = () => {
   const router = useIonRouter();
-  const [items, setItems] = useState<GarmentItem[]>([]);
+  const [items,          setItems]          = useState<GarmentItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<number | null>(null);
-  const [removingId, setRemovingId] = useState<string | number | null>(null);
-  const [gridKey, setGridKey] = useState(0); // force re-stagger on filter change
+  const [removingId,     setRemovingId]     = useState<string | number | null>(null);
+  const [gridKey,        setGridKey]        = useState(0);
 
   const loadItems = useCallback(async (catId: number | null) => {
     try {
@@ -245,9 +243,7 @@ export const Closet: React.FC = () => {
     }
   }, []);
 
-  useIonViewWillEnter(() => {
-    loadItems(activeCategory);
-  });
+  useIonViewWillEnter(() => { loadItems(activeCategory); });
 
   const handleCategoryChange = (catId: number | null) => {
     if (catId === activeCategory) return;
@@ -257,7 +253,6 @@ export const Closet: React.FC = () => {
 
   const handleDeleteGarment = async (e: React.MouseEvent, item: GarmentItem) => {
     e.stopPropagation();
-    // Animate out first, then delete
     setRemovingId(item.id);
     await new Promise((r) => setTimeout(r, 260));
     try {
@@ -276,10 +271,7 @@ export const Closet: React.FC = () => {
 
       <IonHeader className="ion-no-border">
         <IonToolbar
-          style={{
-            "--background": "#0f0c29",
-            "--border-width": "0",
-          } as React.CSSProperties}
+          style={{ "--background": "#0f0c29", "--border-width": "0" } as React.CSSProperties}
         >
           <IonButtons slot="start">
             <IonBackButton
@@ -291,7 +283,6 @@ export const Closet: React.FC = () => {
             <Shirt size={18} style={{ color: "#a5b4fc" }} />
             <span className="text-lg font-bold text-white">Mi Armario</span>
           </div>
-          {/* Item count badge */}
           {items.length > 0 && (
             <div slot="end" className="pr-4">
               <span
@@ -312,14 +303,15 @@ export const Closet: React.FC = () => {
       <IonContent>
         <div
           className="min-h-full"
-          style={{
-            background: "linear-gradient(160deg, #0f0c29 0%, #302b63 60%, #24243e 100%)",
-          }}
+          style={{ background: "linear-gradient(160deg, #0f0c29 0%, #302b63 60%, #24243e 100%)" }}
         >
-          {/* ── Filter pills ── */}
+          {/* Filter pills */}
           <div
             className="px-4 pt-4 pb-2 animate-slide-down"
-            style={{ position: "sticky", top: 0, zIndex: 10, background: "rgba(15,12,41,0.9)", backdropFilter: "blur(12px)" }}
+            style={{
+              position: "sticky", top: 0, zIndex: 10,
+              background: "rgba(15,12,41,0.9)", backdropFilter: "blur(12px)",
+            }}
           >
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {CATEGORIES.map((cat) => {
@@ -330,13 +322,9 @@ export const Closet: React.FC = () => {
                     onClick={() => handleCategoryChange(cat.id)}
                     className="filter-pill flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium flex-shrink-0"
                     style={{
-                      background: active
-                        ? "linear-gradient(135deg, #667eea, #764ba2)"
-                        : "rgba(255,255,255,0.06)",
+                      background: active ? "linear-gradient(135deg, #667eea, #764ba2)" : "rgba(255,255,255,0.06)",
                       color: active ? "white" : "rgba(255,255,255,0.5)",
-                      border: active
-                        ? "1px solid transparent"
-                        : "1px solid rgba(255,255,255,0.08)",
+                      border: active ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
                       boxShadow: active ? "0 4px 12px rgba(102,126,234,0.35)" : "none",
                     }}
                   >
@@ -348,13 +336,10 @@ export const Closet: React.FC = () => {
             </div>
           </div>
 
-          {/* ── Grid ── */}
+          {/* Grid */}
           <div className="px-4 pt-3 pb-28">
             {items.length > 0 ? (
-              <div
-                key={gridKey}
-                className="grid grid-cols-2 gap-3"
-              >
+              <div key={gridKey} className="grid grid-cols-2 gap-3">
                 {items.map((item) => (
                   <GarmentCard
                     key={item.id}
@@ -371,7 +356,7 @@ export const Closet: React.FC = () => {
         </div>
       </IonContent>
 
-      {/* ── FAB: Add garment ── */}
+      {/* FAB */}
       {items.length > 0 && (
         <div
           className="animate-fade-in"

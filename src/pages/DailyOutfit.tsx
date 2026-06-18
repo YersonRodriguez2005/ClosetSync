@@ -3,7 +3,6 @@ import {
   IonPage, IonContent, IonHeader, IonToolbar,
   IonButtons, IonBackButton, useIonRouter, useIonViewWillEnter,
 } from "@ionic/react";
-import { Capacitor } from "@capacitor/core";
 import {
   Sparkles, Bell, BellOff, RefreshCw, ChevronRight,
   Zap, Sun, Layers, Circle,
@@ -81,12 +80,8 @@ const STYLES = `
     animation: scoreBar 0.9s cubic-bezier(0.22,1,0.36,1) 0.3s both;
   }
 
-  .toggle-track {
-    transition: background 0.25s ease;
-  }
-  .toggle-thumb {
-    transition: transform 0.25s cubic-bezier(0.22,1,0.36,1);
-  }
+  .toggle-track { transition: background 0.25s ease; }
+  .toggle-thumb { transition: transform 0.25s cubic-bezier(0.22,1,0.36,1); }
 
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
@@ -95,11 +90,11 @@ const STYLES = `
 // ─── Harmony icons & colors ───────────────────────────────────────────────────
 
 const HARMONY_UI: Record<HarmonyType, { icon: React.ReactNode; color: string; bg: string }> = {
-  complementary: { icon: <Zap     size={16} />, color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-  analogous:     { icon: <Sun     size={16} />, color: "#34d399", bg: "rgba(52,211,153,0.15)"  },
-  triadic:       { icon: <Layers  size={16} />, color: "#a78bfa", bg: "rgba(167,139,250,0.15)" },
-  "split-comp":  { icon: <Sparkles size={16} />, color: "#f472b6", bg: "rgba(244,114,182,0.15)"},
-  neutral:       { icon: <Circle  size={16} />, color: "#94a3b8", bg: "rgba(148,163,184,0.15)" },
+  complementary: { icon: <Zap      size={16} />, color: "#f59e0b", bg: "rgba(245,158,11,0.15)"  },
+  analogous:     { icon: <Sun      size={16} />, color: "#34d399", bg: "rgba(52,211,153,0.15)"  },
+  triadic:       { icon: <Layers   size={16} />, color: "#a78bfa", bg: "rgba(167,139,250,0.15)" },
+  "split-comp":  { icon: <Sparkles size={16} />, color: "#f472b6", bg: "rgba(244,114,182,0.15)" },
+  neutral:       { icon: <Circle   size={16} />, color: "#94a3b8", bg: "rgba(148,163,184,0.15)" },
 };
 
 // ─── Color Palette Strip ──────────────────────────────────────────────────────
@@ -127,10 +122,7 @@ const PaletteStrip: React.FC<{ colors: string[] }> = ({ colors }) => (
 
 const ScoreBar: React.FC<{ score: number }> = ({ score }) => (
   <div className="flex items-center gap-3">
-    <div
-      className="flex-1 h-2 rounded-full overflow-hidden"
-      style={{ background: "rgba(255,255,255,0.08)" }}
-    >
+    <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
       <div
         className="score-bar-fill h-full rounded-full"
         style={{
@@ -149,14 +141,12 @@ const ScoreBar: React.FC<{ score: number }> = ({ score }) => (
 );
 
 // ─── Garment Card ─────────────────────────────────────────────────────────────
+// image_uri is a base64 data URL — pass directly, no Capacitor.convertFileSrc()
 
 const GarmentCard: React.FC<{ garment: GarmentWithColor; index: number }> = ({ garment, index }) => (
   <div
-    className={`garment-card-daily animate-fade-up flex-shrink-0`}
-    style={{
-      animationDelay: `${0.1 + index * 0.08}s`,
-      width: "120px",
-    }}
+    className="garment-card-daily animate-fade-up flex-shrink-0"
+    style={{ animationDelay: `${0.1 + index * 0.08}s`, width: "120px" }}
   >
     <div
       className="rounded-2xl overflow-hidden mb-2"
@@ -175,19 +165,18 @@ const GarmentCard: React.FC<{ garment: GarmentWithColor; index: number }> = ({ g
       }}
     >
       <img
-        src={Capacitor.convertFileSrc(garment.image_uri)}
+        src={garment.image_uri}
         alt={garment.category_name}
         className="w-full h-full object-contain p-2"
         style={{ filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.3))" }}
+        loading="lazy"
+        decoding="async"
       />
     </div>
     <div className="flex items-center gap-1.5">
       <div
         className="w-3 h-3 rounded-full flex-shrink-0"
-        style={{
-          backgroundColor: garment.color_tag,
-          boxShadow: `0 0 6px ${garment.color_tag}88`,
-        }}
+        style={{ backgroundColor: garment.color_tag, boxShadow: `0 0 6px ${garment.color_tag}88` }}
       />
       <span className="text-[11px] font-medium truncate" style={{ color: "rgba(255,255,255,0.55)" }}>
         {garment.category_name}
@@ -205,10 +194,9 @@ const SuggestionCard: React.FC<{
   isTransitioning: boolean;
 }> = ({ suggestion, index, onTryOn, isTransitioning }) => {
   const harmonyUi = HARMONY_UI[suggestion.harmony];
-
   return (
     <div
-      className={`animate-fade-up`}
+      className="animate-fade-up"
       style={{
         animationDelay: `${0.05 * index}s`,
         background: "rgba(255,255,255,0.04)",
@@ -218,7 +206,7 @@ const SuggestionCard: React.FC<{
         marginBottom: "12px",
       }}
     >
-      {/* Header row */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div
@@ -229,9 +217,7 @@ const SuggestionCard: React.FC<{
           </div>
           <div>
             <p className="text-xs font-bold text-white">{suggestion.harmonyLabel}</p>
-            <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-              {suggestion.description}
-            </p>
+            <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>{suggestion.description}</p>
           </div>
         </div>
         <button
@@ -260,7 +246,6 @@ const SuggestionCard: React.FC<{
         <ScoreBar score={suggestion.score} />
       </div>
 
-      {/* Palette */}
       <PaletteStrip colors={suggestion.paletteColors} />
 
       {/* Garment mini-row */}
@@ -269,15 +254,14 @@ const SuggestionCard: React.FC<{
           <div key={g.id} className="flex-shrink-0 flex flex-col items-center gap-1">
             <div
               className="w-12 h-12 rounded-xl overflow-hidden"
-              style={{
-                background: "#f1f2f6",
-                border: "1px solid rgba(255,255,255,0.1)",
-              }}
+              style={{ background: "#f1f2f6", border: "1px solid rgba(255,255,255,0.1)" }}
             >
               <img
-                src={Capacitor.convertFileSrc(g.image_uri)}
+                src={g.image_uri}
                 alt={g.category_name}
                 className="w-full h-full object-contain p-1"
+                loading="lazy"
+                decoding="async"
               />
             </div>
           </div>
@@ -309,10 +293,7 @@ const NotificationToggle: React.FC = () => {
   return (
     <div
       className="flex items-center justify-between px-4 py-3.5 rounded-2xl animate-fade-up delay-4"
-      style={{
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.08)",
-      }}
+      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
     >
       <div className="flex items-center gap-3">
         <div
@@ -323,7 +304,7 @@ const NotificationToggle: React.FC = () => {
           }}
         >
           {enabled
-            ? <Bell size={17} style={{ color: "#a5b4fc" }} />
+            ? <Bell    size={17} style={{ color: "#a5b4fc" }} />
             : <BellOff size={17} style={{ color: "rgba(255,255,255,0.35)" }} />}
         </div>
         <div>
@@ -333,8 +314,6 @@ const NotificationToggle: React.FC = () => {
           </p>
         </div>
       </div>
-
-      {/* Toggle */}
       <button onClick={toggle} disabled={loading} className="btn-tap relative">
         <div
           className="toggle-track w-12 h-6 rounded-full"
@@ -352,7 +331,10 @@ const NotificationToggle: React.FC = () => {
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
 
-const EmptyState: React.FC<{ onGoToStudio: () => void }> = ({ onGoToStudio }) => (
+const EmptyState: React.FC<{ onGoToStudio: () => void; message?: string }> = ({
+  onGoToStudio,
+  message = "Necesitas al menos una parte superior y una inferior para generar outfits automáticos",
+}) => (
   <div className="flex flex-col items-center justify-center py-16 text-center px-6 animate-fade-up">
     <div
       className="w-24 h-24 rounded-3xl flex items-center justify-center mb-6"
@@ -361,9 +343,7 @@ const EmptyState: React.FC<{ onGoToStudio: () => void }> = ({ onGoToStudio }) =>
       <Sparkles size={40} style={{ color: "rgba(165,180,252,0.55)" }} />
     </div>
     <h3 className="text-lg font-bold text-white mb-2">Armario insuficiente</h3>
-    <p className="text-sm mb-6 leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>
-      Necesitas al menos una parte superior y una inferior para generar outfits automáticos
-    </p>
+    <p className="text-sm mb-6 leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>{message}</p>
     <button
       onClick={onGoToStudio}
       className="btn-tap px-6 py-3 rounded-2xl text-sm font-semibold text-white"
@@ -381,21 +361,37 @@ const EmptyState: React.FC<{ onGoToStudio: () => void }> = ({ onGoToStudio }) =>
 
 export const DailyOutfit: React.FC = () => {
   const router = useIonRouter();
-  const [dailyPick, setDailyPick]     = useState<OutfitSuggestion | null>(null);
-  const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
-  const [garments, setGarments]       = useState<GarmentWithColor[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [activeTab, setActiveTab]     = useState<"daily" | "all">("daily");
+  const [dailyPick,    setDailyPick]    = useState<OutfitSuggestion | null>(null);
+  const [suggestions,  setSuggestions]  = useState<OutfitSuggestion[]>([]);
+  const [garments,     setGarments]     = useState<GarmentWithColor[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [activeTab,    setActiveTab]    = useState<"daily" | "all">("daily");
+  const [transitioning, setTransitioning] = useState(false);
+  const [debugInfo,    setDebugInfo]    = useState<string>("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const raw = await getGarments(null) as GarmentWithColor[];
       setGarments(raw);
+
+      // Debug: log what we got so we can diagnose issues
+      const tops = raw.filter(g => g.category_id === 1);
+      const bots = raw.filter(g => g.category_id === 2);
+      setDebugInfo(`Total: ${raw.length} | Superiores: ${tops.length} | Inferiores: ${bots.length}`);
+      console.log("[DailyOutfit] garments loaded:", raw.map(g => ({
+        id: g.id,
+        category_id: g.category_id,
+        category_name: g.category_name,
+        color_tag: g.color_tag,
+      })));
+
       const daily = pickDailyOutfit(raw);
       const all   = generateOutfitSuggestions(raw, 12);
       setDailyPick(daily);
       setSuggestions(all);
+    } catch (err) {
+      console.error("[DailyOutfit] loadData error:", err);
     } finally {
       setLoading(false);
     }
@@ -403,21 +399,22 @@ export const DailyOutfit: React.FC = () => {
 
   useIonViewWillEnter(() => { loadData(); });
 
-  const [transitioning, setTransitioning] = useState(false);
-
   const handleTryOn = (suggestion: OutfitSuggestion) => {
     setTransitioning(true);
-    // Store garment IDs — FittingRoom reads them from sessionStorage on enter
     sessionStorage.setItem(
       "fitting_preload",
       JSON.stringify(suggestion.garments.map((g) => g.id))
     );
-    // Small delay so the button feedback is visible before navigation
     setTimeout(() => {
       setTransitioning(false);
       router.push("/fitting-room");
     }, 280);
   };
+
+  // Determine whether we have enough garments for suggestions
+  const tops = garments.filter(g => g.category_id === 1);
+  const bots = garments.filter(g => g.category_id === 2);
+  const hasEnough = tops.length >= 1 && bots.length >= 1;
 
   const todayStr = new Date().toLocaleDateString("es-CO", {
     weekday: "long", day: "numeric", month: "long",
@@ -428,9 +425,7 @@ export const DailyOutfit: React.FC = () => {
       <style>{STYLES}</style>
 
       <IonHeader className="ion-no-border">
-        <IonToolbar
-          style={{ "--background": "#0f0c29", "--border-width": "0" } as React.CSSProperties}
-        >
+        <IonToolbar style={{ "--background": "#0f0c29", "--border-width": "0" } as React.CSSProperties}>
           <IonButtons slot="start">
             <IonBackButton
               defaultHref="/dashboard"
@@ -441,7 +436,6 @@ export const DailyOutfit: React.FC = () => {
             <Sparkles size={16} style={{ color: "#a5b4fc" }} />
             <span className="text-base font-bold text-white">Outfit del día</span>
           </div>
-          {/* Refresh button */}
           <div slot="end" className="pr-3">
             <button onClick={loadData} className="btn-tap p-2">
               <RefreshCw size={18} style={{ color: "rgba(255,255,255,0.5)" }} />
@@ -450,21 +444,21 @@ export const DailyOutfit: React.FC = () => {
         </IonToolbar>
       </IonHeader>
 
-      <IonContent
-        style={{ "--background": "#0f0c29" } as React.CSSProperties}
-      >
+      <IonContent style={{ "--background": "#0f0c29" } as React.CSSProperties}>
         <div
           className="min-h-full pb-12"
           style={{ background: "linear-gradient(160deg,#0f0c29 0%,#302b63 60%,#24243e 100%)" }}
         >
           {loading ? (
-            // ── Loading skeleton ──
             <div className="flex flex-col items-center justify-center" style={{ minHeight: "60vh" }}>
               <div className="relative flex items-center justify-center w-16 h-16 mb-4">
                 <div
                   className="absolute w-16 h-16 rounded-full border-2"
-                  style={{ borderColor: "rgba(102,126,234,0.15)", borderTopColor: "#667eea",
-                           animation: "spin-slow 1s linear infinite" }}
+                  style={{
+                    borderColor: "rgba(102,126,234,0.15)",
+                    borderTopColor: "#667eea",
+                    animation: "spin-slow 1s linear infinite",
+                  }}
                 />
                 <Sparkles size={22} style={{ color: "#a5b4fc" }} />
               </div>
@@ -472,24 +466,42 @@ export const DailyOutfit: React.FC = () => {
                 Calculando armonías de color...
               </p>
             </div>
-          ) : garments.length < 2 || !dailyPick ? (
-            <EmptyState onGoToStudio={() => router.push("/studio")} />
+          ) : !hasEnough || !dailyPick ? (
+            <div>
+              <EmptyState
+                onGoToStudio={() => router.push("/studio")}
+                message={
+                  garments.length === 0
+                    ? "Aún no has añadido prendas. Ve al Estudio para escanear tu primera prenda."
+                    : tops.length === 0
+                    ? "Necesitas al menos una prenda Superior (camisas, chaquetas) para generar outfits."
+                    : bots.length === 0
+                    ? "Necesitas al menos una prenda Inferior (pantalones, faldas) para generar outfits."
+                    : "Necesitas al menos una parte superior y una inferior."
+                }
+              />
+              {/* Temporary debug label — remove once confirmed working */}
+              {debugInfo ? (
+                <p className="text-center text-[10px] mt-2 px-6" style={{ color: "rgba(255,255,255,0.2)" }}>
+                  {debugInfo}
+                </p>
+              ) : null}
+            </div>
           ) : (
             <div className="px-4 pt-4">
 
-              {/* ── Date header ── */}
+              {/* Date header */}
               <div className="animate-fade-up mb-5">
                 <p className="text-xs font-semibold uppercase tracking-widest mb-1"
                    style={{ color: "rgba(255,255,255,0.35)" }}>
                   {todayStr}
                 </p>
                 <h1 className="text-2xl font-bold text-white leading-tight">
-                  Tu look de{" "}
-                  <span className="shimmer-badge">hoy</span>
+                  Tu look de <span className="shimmer-badge">hoy</span>
                 </h1>
               </div>
 
-              {/* ── Tab switcher ── */}
+              {/* Tab switcher */}
               <div
                 className="flex gap-1 p-1 rounded-2xl mb-5 animate-fade-up delay-1"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
@@ -500,9 +512,7 @@ export const DailyOutfit: React.FC = () => {
                     onClick={() => setActiveTab(tab)}
                     className="btn-tap flex-1 py-2 rounded-xl text-sm font-semibold"
                     style={{
-                      background: activeTab === tab
-                        ? "linear-gradient(135deg,#667eea,#764ba2)"
-                        : "transparent",
+                      background: activeTab === tab ? "linear-gradient(135deg,#667eea,#764ba2)" : "transparent",
                       color: activeTab === tab ? "white" : "rgba(255,255,255,0.45)",
                       boxShadow: activeTab === tab ? "0 4px 12px rgba(102,126,234,0.35)" : "none",
                       transition: "all 0.2s ease",
@@ -513,10 +523,9 @@ export const DailyOutfit: React.FC = () => {
                 ))}
               </div>
 
-              {/* ── DAILY TAB ── */}
+              {/* DAILY TAB */}
               {activeTab === "daily" && dailyPick && (
                 <div>
-                  {/* Hero card */}
                   <div
                     className="rounded-3xl p-5 mb-4 animate-fade-up delay-2"
                     style={{
@@ -566,7 +575,7 @@ export const DailyOutfit: React.FC = () => {
                       <ScoreBar score={dailyPick.score} />
                     </div>
 
-                    {/* Color palette */}
+                    {/* Palette */}
                     <div className="mb-5">
                       <p className="text-xs font-semibold uppercase tracking-wider mb-2"
                          style={{ color: "rgba(255,255,255,0.35)" }}>
@@ -604,12 +613,11 @@ export const DailyOutfit: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* Notification toggle */}
                   <NotificationToggle />
                 </div>
               )}
 
-              {/* ── ALL SUGGESTIONS TAB ── */}
+              {/* ALL SUGGESTIONS TAB */}
               {activeTab === "all" && (
                 <div>
                   <p className="text-xs mb-4" style={{ color: "rgba(255,255,255,0.4)" }}>

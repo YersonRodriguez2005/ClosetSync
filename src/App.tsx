@@ -17,7 +17,7 @@ import "@ionic/react/css/typography.css";
 // DB
 import { initializeDB } from "./database/dbService";
 
-// Notification service (nuestro servicio robusto)
+// Notification service
 import {
   createNotificationChannels,
   scheduleDailyOutfitNotification,
@@ -106,9 +106,16 @@ const SPLASH_STYLES = `
     min-height: 16px;
     transition: opacity 0.3s ease;
   }
+  .splash-error {
+    margin-top: 12px;
+    font-size: 11px;
+    color: rgba(255, 100, 100, 0.7);
+    text-align: center;
+    max-width: 240px;
+  }
 `;
 
-const SplashScreen: React.FC<{ step: string; hiding: boolean }> = ({ step, hiding }) => (
+const SplashScreen: React.FC<{ step: string; hiding: boolean; error?: string }> = ({ step, hiding, error }) => (
   <>
     <style>{SPLASH_STYLES}</style>
     <div className={`splash-screen${hiding ? " hiding" : ""}`}>
@@ -119,16 +126,16 @@ const SplashScreen: React.FC<{ step: string; hiding: boolean }> = ({ step, hidin
         <div className="splash-bar-fill" />
       </div>
       <p className="splash-step">{step}</p>
+      {error && <p className="splash-error">{error}</p>}
     </div>
   </>
 );
 
-// ─── Router-aware inner app (needed for tap handler navigation) ───────────────
+// ─── Router-aware inner app ───────────────────────────────────────────────────
 
 const AppRoutes: React.FC = () => {
   const history = useHistory();
 
-  // Register notification tap → navigate to daily outfit
   useEffect(() => {
     setupNotificationTapHandler(() => {
       history.push("/daily-outfit");
@@ -137,12 +144,9 @@ const AppRoutes: React.FC = () => {
 
   return (
     <IonRouterOutlet animated>
-      {/* Root redirect */}
       <Route exact path="/">
         <Redirect to="/dashboard" />
       </Route>
-
-      {/* Core pages */}
       <Route exact path="/dashboard">
         <Dashboard />
       </Route>
@@ -158,8 +162,6 @@ const AppRoutes: React.FC = () => {
       <Route exact path="/lookbook">
         <Lookbook />
       </Route>
-
-      {/* Feature pages */}
       <Route exact path="/daily-outfit">
         <DailyOutfit />
       </Route>
@@ -169,8 +171,6 @@ const AppRoutes: React.FC = () => {
       <Route exact path="/style-advisor">
         <StyleAdvisor />
       </Route>
-
-      {/* Catch-all — redirect unknown routes to dashboard */}
       <Route>
         <Redirect to="/dashboard" />
       </Route>
@@ -181,40 +181,45 @@ const AppRoutes: React.FC = () => {
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
-  const [isReady,  setIsReady]  = useState(false);
-  const [isHiding, setIsHiding] = useState(false);
-  const [stepMsg,  setStepMsg]  = useState("Iniciando...");
+  const [isReady,   setIsReady]   = useState(false);
+  const [isHiding,  setIsHiding]  = useState(false);
+  const [stepMsg,   setStepMsg]   = useState("Iniciando...");
+  const [bootError, setBootError] = useState<string | undefined>();
 
   useEffect(() => {
     const boot = async () => {
+      // ── Step 1: SQLite / DB ───────────────────────────────────────────────
+      // This is CRITICAL — if it fails we still show the app (ensureDB() in
+      // dbService will retry on the first real operation) but we log clearly.
+      setStepMsg("Cargando armario...");
       try {
-        // ── Step 1: SQLite / DB ─────────────────────────────────────────────
-        setStepMsg("Cargando armario...");
         await initializeDB();
+      } catch (dbErr) {
+        // Don't block app startup — ensureDB() inside dbService will retry
+        // lazily when the user first tries to read/write data.
+        console.error("[App] initializeDB failed (will retry lazily):", dbErr);
+        // Optionally surface a subtle hint in the splash — remove if unwanted
+        setBootError("Base de datos iniciando en segundo plano...");
+      }
 
-        // ── Step 2: Notification channel (Android only, safe on iOS/web) ───
-        setStepMsg("Configurando notificaciones...");
+      // ── Step 2: Notifications (fully non-fatal) ───────────────────────────
+      setStepMsg("Configurando notificaciones...");
+      try {
         await createNotificationChannels();
-
-        // ── Step 3: Schedule daily 7am notification if previously enabled ──
-        // Only re-schedules if the user had it active (persisted in localStorage)
         if (isDailyNotificationEnabled()) {
           await scheduleDailyOutfitNotification();
         }
-
-      } catch (err) {
-        // Non-fatal: log and continue — app works without notifications
-        console.error("[App] Boot error (non-fatal):", err);
-      } finally {
-        // ── Animate splash out, then unmount ────────────────────────────────
-        setStepMsg("¡Listo!");
-        // Small pause so "¡Listo!" is visible
-        await new Promise((r) => setTimeout(r, 400));
-        setIsHiding(true);
-        // Wait for fade-out animation (450ms) before removing splash
-        await new Promise((r) => setTimeout(r, 460));
-        setIsReady(true);
+      } catch (notifErr) {
+        console.warn("[App] Notification setup failed (non-fatal):", notifErr);
       }
+
+      // ── Step 3: Animate splash out ────────────────────────────────────────
+      setStepMsg("¡Listo!");
+      setBootError(undefined); // clear any transient error message
+      await new Promise((r) => setTimeout(r, 400));
+      setIsHiding(true);
+      await new Promise((r) => setTimeout(r, 460));
+      setIsReady(true);
     };
 
     boot();
@@ -222,7 +227,9 @@ const App: React.FC = () => {
 
   return (
     <IonApp>
-      {!isReady && <SplashScreen step={stepMsg} hiding={isHiding} />}
+      {!isReady && (
+        <SplashScreen step={stepMsg} hiding={isHiding} error={bootError} />
+      )}
 
       <IonReactRouter>
         <AppRoutes />

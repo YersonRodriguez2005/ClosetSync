@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   IonPage,
   IonContent,
@@ -12,8 +12,9 @@ import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Camera as CameraIcon, Image as ImageIcon, Check, X, Sparkles, Tag, Palette, Wand2 } from "lucide-react";
 import { saveItem } from "../database/dbService";
 import { extractDominantColor } from "../utils/colorEngine";
+import { compressImageToBase64 } from "../utils/imageUtils";
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const STYLES = `
   @keyframes fadeUp {
@@ -25,9 +26,6 @@ const STYLES = `
     to   { opacity: 1; }
   }
   @keyframes spin-smooth {
-    to { transform: rotate(360deg); }
-  }
-  @keyframes orbit {
     to { transform: rotate(360deg); }
   }
   @keyframes pulse-glow {
@@ -100,12 +98,24 @@ const STYLES = `
   .field-focus-ring { transition: box-shadow 0.2s ease, border-color 0.2s ease; }
 
   .save-btn-glow { animation: pulse-glow 2s ease-in-out infinite; }
-
-  .dark-surface {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
-  }
 `;
+
+// ─── Timeout-aware fetch ──────────────────────────────────────────────────────
+// Wraps fetch with an AbortController timeout so a slow remove.bg response
+// never blocks the main thread long enough to trigger an Android ANR (5 s).
+
+const fetchWithTimeout = (
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(timer)
+  );
+};
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
@@ -147,25 +157,41 @@ const StepIndicator: React.FC<{ current: number }> = ({ current }) => (
 // ─── Category options ─────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  { id: 1, label: "Superior", sub: "Camisas, Chaquetas", emoji: "👕" },
-  { id: 2, label: "Inferior", sub: "Pantalones, Faldas", emoji: "👖" },
-  { id: 3, label: "Calzado", sub: "Zapatos, Tenis", emoji: "👟" },
-  { id: 4, label: "Accesorios", sub: "Gorros, Bolsos", emoji: "🎒" },
+  { id: 1, label: "Superior",    sub: "Camisas, Chaquetas", emoji: "👕" },
+  { id: 2, label: "Inferior",    sub: "Pantalones, Faldas", emoji: "👖" },
+  { id: 3, label: "Calzado",     sub: "Zapatos, Tenis",     emoji: "👟" },
+  { id: 4, label: "Accesorios",  sub: "Gorros, Bolsos",     emoji: "🎒" },
 ];
+
+// ─── Timeouts (ms) ────────────────────────────────────────────────────────────
+const TIMEOUT_REMOVE_BG  = 30_000; // 30 s — remove.bg can be slow on mobile data
+const TIMEOUT_IMG_FETCH  =  8_000; // 8 s  — reading local blob / webPath
+const TIMEOUT_SAVE_FETCH =  8_000; // 8 s  — re-reading processed blob before save
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const Studio: React.FC = () => {
   const router = useIonRouter();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing,   setIsProcessing]   = useState(false);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
-  const [categoryId, setCategoryId] = useState<number>(1);
-  const [colorTag, setColorTag] = useState<string>("#6B7280");
-  const [processingMsg, setProcessingMsg] = useState("Preparando imagen...");
+  const [categoryId,     setCategoryId]     = useState<number>(1);
+  const [colorTag,       setColorTag]       = useState<string>("#6B7280");
+  const [processingMsg,  setProcessingMsg]  = useState("Preparando imagen...");
 
-  // Derive step
+  // Keep a ref to the rotating message interval so we can cancel it cleanly
+  const msgIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearMsgInterval = () => {
+    if (msgIntervalRef.current) {
+      clearInterval(msgIntervalRef.current);
+      msgIntervalRef.current = null;
+    }
+  };
+
+  // Derive step from state
   const step = processedImage ? 2 : isProcessing ? 1 : 0;
 
+  // ─── Capture ───────────────────────────────────────────────────────────────
   const handleCapture = async (source: CameraSource) => {
     try {
       const photo = await Camera.getPhoto({
@@ -177,12 +203,14 @@ export const Studio: React.FC = () => {
       });
       if (photo.webPath) await processImage(photo.webPath);
     } catch {
-      // user cancelled
+      // User cancelled — no action needed
     }
   };
 
+  // ─── Process (remove.bg + color detection) ────────────────────────────────
   const processImage = async (imagePath: string) => {
     setIsProcessing(true);
+
     const msgs = [
       "Analizando imagen...",
       "Detectando prenda...",
@@ -191,79 +219,131 @@ export const Studio: React.FC = () => {
     ];
     let msgIdx = 0;
     setProcessingMsg(msgs[0]);
-    const interval = setInterval(() => {
+    msgIntervalRef.current = setInterval(() => {
       msgIdx = (msgIdx + 1) % msgs.length;
       setProcessingMsg(msgs[msgIdx]);
     }, 1200);
 
     try {
-      const response = await fetch(imagePath);
-      const originalBlob = await response.blob();
+      // 1. Read image from device — timeout prevents indefinite hang on slow
+      //    storage or permission-delayed webPaths.
+      const imgResponse = await fetchWithTimeout(imagePath, {}, TIMEOUT_IMG_FETCH);
+      if (!imgResponse.ok) throw new Error("No se pudo leer la foto del dispositivo");
+      const originalBlob = await imgResponse.blob();
+
+      // 2. Send to remove.bg — 30 s timeout keeps the main thread responsive.
+      //    If the API is slow on mobile data the AbortController fires first,
+      //    throwing a clean DOMException instead of freezing the WebView.
       const formData = new FormData();
       formData.append("image_file", originalBlob);
       formData.append("size", "auto");
 
-      const apiResponse = await fetch("https://api.remove.bg/v1.0/removebg", {
-        method: "POST",
-        headers: { "X-Api-Key": "4ts5yra7aLbaLt5zyLvBxraQ" },
-        body: formData,
-      });
+      setProcessingMsg("Eliminando fondo con IA...");
+      const apiResponse = await fetchWithTimeout(
+        "https://api.remove.bg/v1.0/removebg",
+        {
+          method: "POST",
+          headers: { "X-Api-Key": "4ts5yra7aLbaLt5zyLvBxraQ" },
+          body: formData,
+        },
+        TIMEOUT_REMOVE_BG
+      );
 
-      if (!apiResponse.ok) throw new Error(apiResponse.statusText);
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text().catch(() => apiResponse.statusText);
+        throw new Error(`remove.bg: ${apiResponse.status} — ${errorText}`);
+      }
 
       const transparentBlob = await apiResponse.blob();
       const url = URL.createObjectURL(transparentBlob);
 
-      // ── Auto-detect dominant color from the transparent image ──────────────
+      // 3. Auto-detect dominant color (non-critical — keep default on failure)
       setProcessingMsg("Detectando color dominante...");
       try {
         const detectedColor = await extractDominantColor(url);
         setColorTag(detectedColor);
       } catch {
-        // If color detection fails, keep the default — not a critical error
+        // Non-critical
       }
 
       setProcessedImage(url);
-    } catch {
-      alert("Hubo un problema al procesar la imagen. Verifica tu API Key y conexión.");
+
+    } catch (err) {
+      const isTimeout = err instanceof DOMException && err.name === "AbortError";
+      const msg = isTimeout
+        ? "La conexión tardó demasiado. Verifica tu red e inténtalo de nuevo."
+        : `No se pudo procesar la imagen: ${err instanceof Error ? err.message : "Error desconocido"}`;
+      alert(msg);
+      console.error("processImage error:", err);
     } finally {
-      clearInterval(interval);
+      clearMsgInterval();
       setIsProcessing(false);
     }
   };
 
+  // ─── Save ──────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!processedImage) return;
     setIsProcessing(true);
+    setProcessingMsg("Comprimiendo imagen...");
+
     try {
-      const response = await fetch(processedImage);
-      const blob = await response.blob();
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64data = reader.result as string;
-        await saveItem({
-          id: crypto.randomUUID(),
-          category_id: categoryId,
-          image_uri: base64data,
-          color_tag: colorTag,
-          created_at: new Date().toISOString(),
+      // 1. Compress with Canvas (600px JPEG 60%) → ~30–80 KB safe for SQLite
+      let compressedBase64: string;
+      try {
+        compressedBase64 = await compressImageToBase64(processedImage, 600, 0.6);
+      } catch (compressionErr) {
+        // Fallback: FileReader with proper error handling
+        console.error("Canvas compression failed, falling back to FileReader:", compressionErr);
+        const res = await fetchWithTimeout(processedImage, {}, TIMEOUT_SAVE_FETCH);
+        if (!res.ok) throw new Error("No se pudo leer la imagen procesada");
+        const blob = await res.blob();
+        compressedBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (reader.result) resolve(reader.result as string);
+            else reject(new Error("FileReader no retornó resultado"));
+          };
+          reader.onerror = () => reject(reader.error ?? new Error("FileReader error"));
+          reader.readAsDataURL(blob);
         });
-        URL.revokeObjectURL(processedImage);
-        setProcessedImage(null);
-        setIsProcessing(false);
-        router.push("/closet", "forward", "replace");
-      };
-      reader.readAsDataURL(blob);
-    } catch {
+      }
+
+      setProcessingMsg("Guardando en tu clóset...");
+
+      // 2. Persist to DB
+      await saveItem({
+        id: crypto.randomUUID(),
+        category_id: categoryId,
+        image_uri: compressedBase64,
+        color_tag: colorTag,
+        created_at: new Date().toISOString(),
+      });
+
+      // 3. Cleanup & navigate
+      URL.revokeObjectURL(processedImage);
+      setProcessedImage(null);
+      router.push("/closet", "forward", "replace");
+
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      console.error("handleSave error:", err);
+      alert(`No se pudo guardar la prenda: ${msg}`);
+    } finally {
+      // Always re-enable UI
       setIsProcessing(false);
     }
   };
 
+  // ─── Discard ───────────────────────────────────────────────────────────────
   const handleDiscard = () => {
+    clearMsgInterval();
     if (processedImage) URL.revokeObjectURL(processedImage);
     setProcessedImage(null);
+    setIsProcessing(false);
   };
 
+  // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <IonPage>
       <style>{STYLES}</style>
@@ -285,7 +365,11 @@ export const Studio: React.FC = () => {
           <div slot="end" className="pr-4">
             <span
               className="text-xs font-bold px-2.5 py-1 rounded-full"
-              style={{ background: "rgba(102,126,234,0.2)", color: "#a5b4fc", border: "1px solid rgba(102,126,234,0.3)" }}
+              style={{
+                background: "rgba(102,126,234,0.2)",
+                color: "#a5b4fc",
+                border: "1px solid rgba(102,126,234,0.3)",
+              }}
             >
               IA
             </span>
@@ -301,6 +385,7 @@ export const Studio: React.FC = () => {
           }}
         >
           <div className="flex-1 px-6 pt-4 pb-10 flex flex-col">
+
             {/* Title */}
             <div className="mb-6 animate-fade-up">
               <h1 className="text-2xl font-bold text-white">Estudio</h1>
@@ -309,13 +394,11 @@ export const Studio: React.FC = () => {
               </p>
             </div>
 
-            {/* Step indicator */}
             <StepIndicator current={step} />
 
-            {/* ── STATE 0: Source selection ── */}
+            {/* ── STATE 0: Source selection ─────────────────────────────── */}
             {step === 0 && (
               <div className="flex-1 flex flex-col justify-center animate-fade-up delay-100">
-                {/* Illustration */}
                 <div className="flex justify-center mb-10">
                   <div
                     className="w-28 h-28 rounded-3xl flex items-center justify-center relative"
@@ -372,38 +455,50 @@ export const Studio: React.FC = () => {
                     </div>
                     <div className="text-left">
                       <p className="text-base font-semibold text-white">Desde Galería</p>
-                      <p className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>Sube una imagen existente</p>
+                      <p className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        Sube una imagen existente
+                      </p>
                     </div>
                   </button>
                 </div>
               </div>
             )}
 
-            {/* ── STATE 1: Processing ── */}
+            {/* ── STATE 1: Processing ───────────────────────────────────── */}
             {isProcessing && step === 1 && (
               <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-                {/* Nested spinner rings */}
                 <div className="relative flex items-center justify-center w-24 h-24 mb-8">
                   <div className="spinner-ring-outer absolute" />
                   <div className="spinner-ring" />
-                  <Sparkles
-                    size={20}
-                    style={{ color: "#a5b4fc", position: "absolute" }}
-                  />
+                  <Sparkles size={20} style={{ color: "#a5b4fc", position: "absolute" }} />
                 </div>
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  Procesando magia
-                </h3>
+                <h3 className="text-xl font-semibold text-white mb-2">Procesando magia</h3>
                 <p
                   className="text-sm text-center"
-                  style={{ color: "rgba(255,255,255,0.45)", minHeight: "20px", transition: "opacity 0.3s" }}
+                  style={{
+                    color: "rgba(255,255,255,0.45)",
+                    minHeight: "20px",
+                    transition: "opacity 0.3s",
+                  }}
                 >
                   {processingMsg}
                 </p>
+                {/* Cancel button — lets user abort a hung remove.bg call */}
+                <button
+                  onClick={handleDiscard}
+                  className="btn-tap mt-10 px-6 py-2.5 rounded-xl text-sm font-medium"
+                  style={{
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "rgba(255,255,255,0.5)",
+                  }}
+                >
+                  Cancelar
+                </button>
               </div>
             )}
 
-            {/* ── STATE 2: Confirm & metadata ── */}
+            {/* ── STATE 2: Confirm & metadata ───────────────────────────── */}
             {processedImage && !isProcessing && (
               <div className="flex-1 flex flex-col animate-fade-up">
                 {/* Preview */}
@@ -423,7 +518,10 @@ export const Studio: React.FC = () => {
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Tag size={14} style={{ color: "#a5b4fc" }} />
-                    <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>
+                    <label
+                      className="text-xs font-semibold uppercase tracking-wider"
+                      style={{ color: "rgba(255,255,255,0.5)" }}
+                    >
                       Categoría
                     </label>
                   </div>
@@ -437,7 +535,9 @@ export const Studio: React.FC = () => {
                           background: categoryId === cat.id
                             ? "rgba(102,126,234,0.2)"
                             : "rgba(255,255,255,0.04)",
-                          border: `1px solid ${categoryId === cat.id ? "rgba(102,126,234,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          border: `1px solid ${categoryId === cat.id
+                            ? "rgba(102,126,234,0.5)"
+                            : "rgba(255,255,255,0.08)"}`,
                           transition: "all 0.2s ease",
                         }}
                       >
@@ -451,19 +551,24 @@ export const Studio: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Color picker — shows auto-detected color with manual override */}
+                {/* Color picker */}
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Palette size={14} style={{ color: "#a5b4fc" }} />
-                      <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>
+                      <label
+                        className="text-xs font-semibold uppercase tracking-wider"
+                        style={{ color: "rgba(255,255,255,0.5)" }}
+                      >
                         Color predominante
                       </label>
                     </div>
-                    {/* Auto-detected badge */}
                     <div
                       className="flex items-center gap-1 px-2 py-0.5 rounded-full"
-                      style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.25)" }}
+                      style={{
+                        background: "rgba(52,211,153,0.15)",
+                        border: "1px solid rgba(52,211,153,0.25)",
+                      }}
                     >
                       <Wand2 size={10} style={{ color: "#34d399" }} />
                       <span className="text-[10px] font-semibold" style={{ color: "#34d399" }}>
@@ -478,10 +583,11 @@ export const Studio: React.FC = () => {
                       border: "1px solid rgba(255,255,255,0.1)",
                     }}
                   >
-                    {/* Color swatch — clickable to override */}
                     <div
                       className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0"
-                      style={{ boxShadow: `0 0 0 2px rgba(255,255,255,0.15), 0 0 14px ${colorTag}66` }}
+                      style={{
+                        boxShadow: `0 0 0 2px rgba(255,255,255,0.15), 0 0 14px ${colorTag}66`,
+                      }}
                     >
                       <input
                         type="color"
@@ -490,10 +596,7 @@ export const Studio: React.FC = () => {
                         className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
                         style={{ transform: "scale(1.5)" }}
                       />
-                      <div
-                        className="w-full h-full rounded-lg"
-                        style={{ backgroundColor: colorTag }}
-                      />
+                      <div className="w-full h-full rounded-lg" style={{ backgroundColor: colorTag }} />
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-bold text-white font-mono uppercase tracking-wide">
@@ -503,10 +606,9 @@ export const Studio: React.FC = () => {
                         Toca el círculo para ajustar manualmente
                       </p>
                     </div>
-                    {/* Live preview of harmony partners */}
+                    {/* Harmony preview dots */}
                     <div className="flex gap-1">
                       {[180, 30, -30].map((offset) => {
-                        // Quick HSL shift for preview dots
                         const hex = colorTag.replace("#", "");
                         const r = parseInt(hex.substring(0,2),16);
                         const g = parseInt(hex.substring(2,4),16);
@@ -520,11 +622,10 @@ export const Studio: React.FC = () => {
                         if(max===rn)h=((gn-bn)/d+(gn<bn?6:0))/6;
                         else if(max===gn)h=((bn-rn)/d+2)/6;
                         else h=((rn-gn)/d+4)/6;
-                        const newH = ((h*360+offset)%360+360)%360;
-                        const sn=s,ln=l;
-                        const a2=sn*Math.min(ln,1-ln);
-                        const f=(n:number)=>{const k=(n+newH/30)%12;return Math.round(255*(ln-a2*Math.max(Math.min(k-3,9-k,1),-1))).toString(16).padStart(2,"0");};
-                        const partnerHex = `#${f(0)}${f(8)}${f(4)}`;
+                        const newH=((h*360+offset)%360+360)%360;
+                        const a2=s*Math.min(l,1-l);
+                        const f=(n:number)=>{const k=(n+newH/30)%12;return Math.round(255*(l-a2*Math.max(Math.min(k-3,9-k,1),-1))).toString(16).padStart(2,"0");};
+                        const partnerHex=`#${f(0)}${f(8)}${f(4)}`;
                         return (
                           <div
                             key={offset}
@@ -569,6 +670,7 @@ export const Studio: React.FC = () => {
                 </div>
               </div>
             )}
+
           </div>
         </div>
       </IonContent>
